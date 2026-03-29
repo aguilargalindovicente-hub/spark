@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Vicente HQ</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#030712;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding-bottom:65px}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:#0f172a}
+::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+input,button,textarea,select{font-family:inherit}
+button:focus,input:focus,textarea:focus,select:focus{outline:none}
+.cell-btn{width:27px;height:27px;border-radius:5px;border:none;cursor:pointer;font-size:11px;font-weight:700;transition:all 0.15s;display:inline-flex;align-items:center;justify-content:center}
+.cell-btn.done{background:linear-gradient(135deg,#10b981,#059669);color:white;box-shadow:0 0 7px rgba(16,185,129,0.35)}
+.cell-btn.fail{background:linear-gradient(135deg,#ef4444,#dc2626);color:white}
+.cell-btn.empty{background:#1e293b;color:#475569;border:1px solid #334155}
+.cell-btn.today-col{border:1px solid #f97316!important}
+@keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.35)}100%{transform:scale(1)}}
+.pop{animation:pop 0.25s ease}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="error" style="display:none;color:#f87171;padding:20px;font-family:monospace;font-size:12px;white-space:pre-wrap;background:#030712"></div>
+<script>
+window.onerror=function(msg,src,line,col,err){
+  document.getElementById("root").innerHTML="";
+  var el=document.getElementById("error");
+  el.style.display="block";
+  el.textContent="ERROR linea "+line+": "+msg+(err?("\n"+err.stack):"");
+  return true;
+};
+</script>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback}=React;
+
+const SUPA_URL="https://uezoejjoujfvykjyntel.supabase.co";
+const SUPA_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVlem9lampvdWpmdnlranludGVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwODY5MTgsImV4cCI6MjA4ODY2MjkxOH0.NsF6NVYWgH68hcxA1Hm4gxLopwoqz0SnKSRcEWjYNLo";
+const sb=supabase.createClient(SUPA_URL,SUPA_KEY);
+
+// ── CONSTANTS ─────────────────────────────────────────────────────────────────
+const TC={BJJ:{c:"#22c55e",b:"#052e16"},FUERZA:{c:"#60a5fa",b:"#0c1a3a"},MOVILIDAD:{c:"#34d399",b:"#022c22"},CARDIO:{c:"#f87171",b:"#2d0a0a"},DESCANSO:{c:"#94a3b8",b:"#1e293b"}};
+const IC={"Muy Alta":"#ef4444","Alta":"#f97316","Media-Alta":"#eab308","Media":"#22c55e","Baja-Media":"#3b82f6","Baja":"#06b6d4","Muy Baja":"#8b5cf6","Mínima":"#64748b"};
+const TIPOS=["BJJ","FUERZA","MOVILIDAD","CARDIO","DESCANSO"];
+const INTENSIDADES=["Muy Alta","Alta","Media-Alta","Media","Baja-Media","Baja","Muy Baja","Mínima"];
+const MONTHS=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const CAT_COLOR={"energía":"#f97316","mente":"#8b5cf6","relaciones":"#06b6d4","crecimiento":"#10b981"};
+const WCOLORS=["#1a3a6b","#7b241c","#0e6655","#6c3483","#b7950b","#1a4a3b","#4a1a2b","#2a3a1a"];
+const uid=()=>Math.random().toString(36).slice(2,9);
+
+// ── DEFAULT DATA ──────────────────────────────────────────────────────────────
+const DEFAULT_HABITS=[
+  {id:0,name:"Dormir ≥ 7h",icon:"🌙",category:"energía"},
+  {id:1,name:"Entrenamiento / movimiento",icon:"💪",category:"energía"},
+  {id:2,name:"Ayuno o cenas limpias",icon:"🥗",category:"energía"},
+  {id:3,name:"Pensar por escrito 10 min",icon:"✍️",category:"mente"},
+  {id:4,name:"Bloque trabajo profundo 90 min",icon:"🎯",category:"mente"},
+  {id:5,name:"Meditación ≥ 10 min",icon:"🧘",category:"mente"},
+  {id:6,name:"Lectura ≥ 10 páginas",icon:"📖",category:"mente"},
+  {id:7,name:"Escucha activa sin móvil",icon:"👂",category:"relaciones"},
+  {id:8,name:"Crear algo / Estudio",icon:"🚀",category:"crecimiento"},
+  {id:9,name:"Plan del día siguiente (5 min)",icon:"📋",category:"crecimiento"},
+];
+
+const DEFAULT_HABITS_DATA={
+  "2026-0":{0:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],1:[1,1,0,1,1,1,1,1,1,0,1,0,1,1,0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,0],2:[0,0,1,1,1,1,1,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0],3:[0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,null,0,1,1,0,1,1,1,1,0,1,1],4:[0,1,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1],5:[0,0,0,0,1,1,0,1,1,0,1,0,1,1,0,0,0,0,0,0,0,1,1,1,0,1,1,1,1,0,0],6:[1,1,1,1,1,1,1,1,1,1,0,1,1,0,0,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1],7:[1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],8:[0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,1,0,1,0,0,1,0,1,1,1,1,1,1,1],9:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1]},
+  "2026-1":{0:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,null,null,null],1:[1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,0,1,1,1,0,0,1,1,1,1,1,null,null,null],2:[0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,null,null,null],3:[1,1,0,1,1,1,1,1,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,null,null,null],4:[1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,0,1,1,1,1,0,1,null,null,null],5:[0,1,1,1,1,1,0,1,0,0,1,0,1,0,0,0,1,0,1,0,0,0,0,0,0,1,0,1,null,null,null],6:[1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,0,1,0,0,0,0,1,1,1,0,0,0,null,null,null],7:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,null,null,null],8:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,0,null,null,null],9:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,0,1,0,null,null,null]},
+  "2026-2":{0:[1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,null,null,null,null,null,null,null,null,null,null,null,null,null,null],1:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,null,null,null,null,null,null,null,null,null,null,null,null,null,null],2:[0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null],3:[0,1,0,1,0,1,0,0,0,0,1,1,0,0,0,0,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null],4:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,null,null,null,null,null,null,null,null,null,null,null,null,null,null],5:[0,1,0,0,1,0,0,0,0,1,1,0,0,1,0,0,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null],6:[0,0,1,0,0,0,0,0,0,1,1,0,1,1,0,0,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null],7:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,null,null,null,null,null,null,null,null,null,null,null,null,null,null],8:[1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,null,null,null,null,null,null,null,null,null,null,null,null,null,null],9:[1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},
+};
+
+const DEFAULT_CHECKED={
+  "plan_abril_2025_s1":true,"plan_abril_2025_s2":true,"plan_abril_2025_s3":true,"plan_abril_2025_s4":true,
+  "plan_abril_2025_s5":false,"plan_abril_2025_s6":true,"plan_abril_2025_s7":true,"plan_abril_2025_s8":false,
+  "plan_abril_2025_s9":true,"plan_abril_2025_s10":true,"plan_abril_2025_s11":true,"plan_abril_2025_s12":false,
+  "plan_abril_2025_s13":true,"plan_abril_2025_s14":true,"plan_abril_2025_s15":true,"plan_abril_2025_s16":false,
+  "plan_abril_2025_s17":false,"plan_abril_2025_s18":true,"plan_abril_2025_s19":true,"plan_abril_2025_s20":false,
+  "plan_abril_2025_s21":false,"plan_abril_2025_s22":false,"plan_abril_2025_s23":false,"plan_abril_2025_s24":true,
+};
+
+const DEFAULT_COMBATS=[
+  {id:"c1",date:"2025-04-18",rival:"Rival misma edad y peso",result:"derrota",category:"gi",techniques:"Guardia, pasaje",notes:"Perdí a puntos. Cardio fue el problema principal."},
+  {id:"c2",date:"2025-04-18",rival:"Rival 35 años 85kg (absoluto)",result:"victoria",category:"nogi",techniques:"Top game, control",notes:"Gané a puntos. Lo aguanté bien a pesar de la diferencia de peso."},
+  {id:"c3",date:"2025-04-18",rival:"Semifinal No-Gi",result:"victoria",category:"nogi",techniques:"Americana de pie (remontando)",notes:"Gané por finalización remontando el marcador. Americana de pie perfecta."},
+  {id:"c4",date:"2025-04-18",rival:"Final No-Gi (rival más joven)",result:"derrota",category:"nogi",techniques:"Defensa, guardia",notes:"Perdí por finalización. Llegué a la final, buen resultado general."},
+];
+
+const DEFAULT_PLAN={
+  id:"plan_abril_2025",name:"Plan Abril 2025 (Completado)",compDate:"2025-04-18",compGoal:"Plata No-Gi / Top 4 Gi",createdAt:"2025-03-16T00:00:00.000Z",
+  weeks:[
+    {id:"w1",label:"SEMANA 1",dates:"16-22 MARZO",fase:"INTENSIFICACION · Carga alta",color:"#1a3a6b",sessions:[
+      {id:"s1",type:"BJJ",name:"Tecnica + Drilling",dur:"90'",intensity:"Media",desc:"Calentamiento 10' · Tecnica guardia/passing 30' · Drilling top/bottom 20' · Sparring posicional 3x5'"},
+      {id:"s2",type:"FUERZA",name:"Full Body Fuerza E1",dur:"60'",intensity:"Alta",desc:"Press banca 4x8 · Remo mancuerna 4x10/brazo · Sentadilla bulgara 4x10/pierna · Hip thrust 4x15"},
+      {id:"s3",type:"BJJ",name:"Sparring Competitivo",dur:"90'",intensity:"Alta",desc:"6 rounds x 6' al ritmo de competicion · 2 rounds con cronometro · Cool-down 15'"},
+      {id:"s4",type:"MOVILIDAD",name:"Movilidad Cadera + Columna",dur:"45'",intensity:"Baja",desc:"90/90 hip stretch · Pigeon pose · Rotaciones toracicas · Bretzel · Inchworm"},
+      {id:"s5",type:"BJJ",name:"No-Gi Grappling",dur:"90'",intensity:"Media-Alta",desc:"Tecnica takedowns + clinch 25' · Sparring No-gi 5x5' · Analisis video 20'"},
+      {id:"s6",type:"CARDIO",name:"Intervalos Aerobicos",dur:"50'",intensity:"Alta",desc:"8x3' al 85% FCM · 5' vuelta calma · Stretching 10'"},
+      {id:"s7",type:"FUERZA",name:"Tren Superior Explosivo E2",dur:"55'",intensity:"Alta",desc:"Thrusters 5x12 · Burpees shrimp 5x10 · Turkish get-up 5x5/lado · Bear crawls 5x15m"},
+      {id:"s8",type:"BJJ",name:"Guardia Especifica",dur:"80'",intensity:"Media",desc:"Drilling barridos x50 · Tecnica back-take 20' · Flow rolling 3x6'"},
+      {id:"s9",type:"BJJ",name:"Sparring Intenso",dur:"100'",intensity:"Muy Alta",desc:"Sparring 8x5' con companeros distintos · Revision video 20'"},
+      {id:"s10",type:"BJJ",name:"Tecnica Suave",dur:"75'",intensity:"Baja",desc:"Dinamica 15' · Tecnica libre 30' · Flow rolling 4x8'"},
+      {id:"s11",type:"MOVILIDAD",name:"Yoga BJJ",dur:"60'",intensity:"Baja",desc:"Yoga BJJ: cadera, hombros, columna · Respiracion 10' · Foam roller 15'"},
+      {id:"s12",type:"DESCANSO",name:"Descanso Activo",dur:"40'",intensity:"Mínima",desc:"Paseo suave · Estiramientos 15' · Sueno 8-9h"},
+    ]},
+    {id:"w2",label:"SEMANA 2",dates:"23-29 MARZO",fase:"PICO DE CARGA · Torneo interno",color:"#7b241c",sessions:[
+      {id:"s13",type:"BJJ",name:"Tecnica + Cadenas",dur:"90'",intensity:"Media",desc:"Secuencias 3-4 movimientos · Drilling sumision x40/lado · Sparring posicional 4x5'"},
+      {id:"s14",type:"FUERZA",name:"Fuerza Isometrica E5",dur:"55'",intensity:"Media",desc:"Sentadilla isometrica 4x45seg · Press banca pausa 4x6 · Remo isometrico 4x30seg"},
+      {id:"s15",type:"BJJ",name:"Super-Sparring x10",dur:"90'",intensity:"Muy Alta",desc:"10 rounds x 5' con 10 companeros distintos"},
+      {id:"s16",type:"MOVILIDAD",name:"Recuperacion Post-sparring",dur:"55'",intensity:"Baja",desc:"Ducha fria · Stretching pasivo 20' · Foam roller 15'"},
+      {id:"s17",type:"CARDIO",name:"Cardio Especifico BJJ",dur:"45'",intensity:"Alta",desc:"6 rondas x (sprawl + shot doble + guardia pull + stand-up) · 60seg descanso"},
+      {id:"s18",type:"BJJ",name:"Game Plan Completo",dur:"80'",intensity:"Media",desc:"grip > takedown > top game > norte-sur choke · x5 reps completas"},
+      {id:"s19",type:"FUERZA",name:"Potencia y Grip E4",dur:"50'",intensity:"Alta",desc:"Remo toalla 4x8/brazo · Farmer walk 4x40p · Tabata 6 rondas"},
+      {id:"s20",type:"BJJ",name:"Defensa y Escapes",dur:"80'",intensity:"Media",desc:"Escapes mount x30 · Back control x30 · Sparring defensivo 3x5'"},
+      {id:"s21",type:"BJJ",name:"TORNEO INTERNO",dur:"120'",intensity:"Muy Alta",desc:"Combates de 6' con arbitro · Min 4 combates · Grabar video"},
+      {id:"s22",type:"BJJ",name:"Recuperacion Tecnica",dur:"70'",intensity:"Baja",desc:"Drilling sombra solo 30' · Flow rolling suave 2x8'"},
+      {id:"s23",type:"MOVILIDAD",name:"Movilidad Completa",dur:"60'",intensity:"Baja",desc:"Yoga BJJ 45' · Puntos tension: cuello, hombros, caderas"},
+      {id:"s24",type:"DESCANSO",name:"Descanso Total",dur:"—",intensity:"Mínima",desc:"Sin entrenamiento · 2g proteina/kg · Sueno 9h"},
+    ]},
+    {id:"w3",label:"SEMANA 3",dates:"30 MAR - 5 ABR",fase:"ESPECIFICIDAD · Solo game plan",color:"#0e6655",sessions:[
+      {id:"s25",type:"BJJ",name:"Tecnica Competitiva",dur:"85'",intensity:"Media",desc:"Solo tecnicas del game plan · Drilling x60 · Sparring posicional 4x5'"},
+      {id:"s26",type:"FUERZA",name:"Resistencia Muscular E3",dur:"40'",intensity:"Media",desc:"Sentadilla goblet pausa 4x12 · Press banca tempo 4x10 · Remo inclinado 4x12"},
+      {id:"s27",type:"BJJ",name:"Sparring por Tipos",dur:"100'",intensity:"Alta",desc:"4 rounds vs guard pesada · 3 vs moviles · 3 vs top game"},
+      {id:"s28",type:"CARDIO",name:"Tempo Run Bici",dur:"45'",intensity:"Media",desc:"30' carrera o bici a 75% FCM · Ritmo constante"},
+      {id:"s29",type:"BJJ",name:"Escenarios de Combate",dur:"90'",intensity:"Alta",desc:"Ganar por 1 punto · Remontar 0-2 · 5 escenarios x6'"},
+      {id:"s30",type:"MOVILIDAD",name:"CARs Articulares",dur:"35'",intensity:"Baja",desc:"Hip CARs x15/lado · Shoulder CARs x15 · Ankle CARs x15"},
+      {id:"s31",type:"BJJ",name:"Drilling Puro Cadenas",dur:"75'",intensity:"Baja-Media",desc:"A-B-C x50 · B-A-norte-sur x50 · SIN sparring"},
+      {id:"s32",type:"BJJ",name:"Sparring Final S3",dur:"100'",intensity:"Muy Alta",desc:"6 rounds x 6' al 100% · Game plan completo · Video"},
+      {id:"s33",type:"BJJ",name:"Tecnica Suave Mental",dur:"60'",intensity:"Baja",desc:"Flow rolling 3x8' · Visualizacion game plan x3"},
+      {id:"s34",type:"MOVILIDAD",name:"Yoga Regeneracion",dur:"70'",intensity:"Baja",desc:"Yoga restaurativo 40' · Savasana 10' · Foam roller"},
+      {id:"s35",type:"DESCANSO",name:"Descanso Analisis",dur:"—",intensity:"Mínima",desc:"Sin entrenamiento · Revisar game plan · Sueno 9h"},
+    ]},
+    {id:"w4",label:"SEMANA 4",dates:"6-12 ABR",fase:"TAPER · Volumen -40%",color:"#6c3483",sessions:[
+      {id:"s36",type:"BJJ",name:"Tecnica Precisa",dur:"70'",intensity:"Media",desc:"Solo game plan · Drilling calidad x30 · Sparring posicional 3x5'"},
+      {id:"s37",type:"FUERZA",name:"Potencia Explosiva E6",dur:"35'",intensity:"Media",desc:"Box jumps 4x8 · Zancadas explosivas · Plyo push-ups 4x8"},
+      {id:"s38",type:"BJJ",name:"Sparring Controlado",dur:"80'",intensity:"Media",desc:"5 rounds x 5' · Game plan sin errores"},
+      {id:"s39",type:"MOVILIDAD",name:"Movilidad Pre-Comp",dur:"45'",intensity:"Baja",desc:"Hip flexor · Pigeon · Thoracic open · Columna completa"},
+      {id:"s40",type:"BJJ",name:"Detalles Finos",dur:"65'",intensity:"Baja",desc:"Grips especificos x20 · Flow rolling 2x8'"},
+      {id:"s41",type:"CARDIO",name:"Cardio Suave",dur:"30'",intensity:"Baja",desc:"Bici o remo 20' zona 2 · Estiramientos 10'"},
+      {id:"s42",type:"BJJ",name:"ULTIMO SPARRING DURO",dur:"80'",intensity:"Alta",desc:"4 rounds x 6' al 85-90% · Ultimo sparring intenso"},
+      {id:"s43",type:"MOVILIDAD",name:"Movilidad Visualizacion",dur:"50'",intensity:"Baja",desc:"Yoga suave 30' · Visualizacion combate ganado x5"},
+      {id:"s44",type:"BJJ",name:"Drilling Suave Final",dur:"45'",intensity:"Muy Baja",desc:"Solo drilling sin resistencia · SIN sparring"},
+      {id:"s45",type:"DESCANSO",name:"Descanso Carga Carbos",dur:"—",intensity:"Mínima",desc:"Sin entrenamiento · Pasta, arroz, avena · Sueno 9h"},
+    ]},
+    {id:"w5",label:"PEAK WEEK",dates:"13-17 ABR",fase:"Solo activacion · A ganar",color:"#b7950b",sessions:[
+      {id:"s46",type:"BJJ",name:"Activacion Tecnica",dur:"30'",intensity:"Muy Baja",desc:"Drilling muy suave · Solo game plan · Sin sparring"},
+      {id:"s47",type:"MOVILIDAD",name:"Movilidad Activacion",dur:"45'",intensity:"Baja",desc:"Movilidad articular 25' · Activacion gluteos y core 10'"},
+      {id:"s48",type:"BJJ",name:"Flow Rolling Suave",dur:"30'",intensity:"Muy Baja",desc:"2 rounds x 5' MUY suave · Fluidez y confianza"},
+      {id:"s49",type:"MOVILIDAD",name:"Yoga Restaurativo",dur:"50'",intensity:"Mínima",desc:"Yoga restaurativo 40' · Yoga nidra 10' · Visualizacion x3"},
+      {id:"s50",type:"DESCANSO",name:"Descanso Mie",dur:"—",intensity:"Mínima",desc:"Sin entrenamiento · Carbohidratos 7g/kg · Sueno 9h"},
+      {id:"s51",type:"DESCANSO",name:"Pre-Competicion Jue",dur:"35'",intensity:"Mínima",desc:"Paseo suave 20' · Estiramientos 15' · Preparar bolsa"},
+    ]},
+  ]
+};
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function Circ({pct,size=80,color="#22c55e"}){
+  const r=(size-10)/2,c=2*Math.PI*r;
+  return <svg width={size} height={size}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#1e293b" strokeWidth={6}/><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={6} strokeDasharray={c} strokeDashoffset={c*(1-pct/100)} strokeLinecap="round" transform={"rotate(-90 "+(size/2)+" "+(size/2)+")"} style={{transition:"stroke-dashoffset 0.8s"}}/><text x={size/2} y={size/2+5} textAnchor="middle" fill={color} style={{fontSize:size>70?14:11,fontWeight:700,fontFamily:"monospace"}}>{pct}%</text></svg>;
+}
+
+function Modal({onClose,children,maxW=480}){
+  return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"#000c",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
+    <div style={{background:"#0f172a",borderRadius:16,border:"1px solid #1e293b",padding:22,width:"100%",maxWidth:maxW}} onClick={e=>e.stopPropagation()}>
+      {children}
+    </div>
+  </div>;
+}
+
+function Inp({value,onChange,placeholder,type="text",style={}}){
+  return <input value={value} onChange={onChange} type={type} placeholder={placeholder}
+    style={{width:"100%",background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"8px 12px",color:"#f1f5f9",fontSize:13,...style}}/>;
+}
+
+function Sel({value,onChange,options,style={}}){
+  return <select value={value} onChange={onChange}
+    style={{width:"100%",background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"8px 12px",color:"#f1f5f9",fontSize:13,...style}}>
+    {options.map(o=><option key={o}>{o}</option>)}
+  </select>;
+}
+
+function Field({label,children}){
+  return <div style={{marginBottom:11}}>
+    <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>{label}</div>
+    {children}
+  </div>;
+}
+
+function Btn({onClick,children,style={},disabled=false}){
+  return <button onClick={onClick} disabled={disabled}
+    style={{border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:disabled?"not-allowed":"pointer",...style}}>
+    {children}
+  </button>;
+}
+
+// ── MAIN APP ──────────────────────────────────────────────────────────────────
+function App(){
+  const [tab,setTab]=useState("dashboard");
+  const [plans,setPlans]=useState([DEFAULT_PLAN]);
+  const [activePlanId,setActivePlanId]=useState(DEFAULT_PLAN.id);
+  const [checked,setChecked]=useState(DEFAULT_CHECKED);
+  const [habits,setHabits]=useState(DEFAULT_HABITS);
+  const [habitsData,setHabitsData]=useState(DEFAULT_HABITS_DATA);
+  const [energyLog,setEnergyLog]=useState({});
+  const [combats,setCombats]=useState(DEFAULT_COMBATS);
+  const [apiKey,setApiKey]=useState("");
+  const [syncing,setSyncing]=useState(false);
+  // UI state
+  const [expWeek,setExpWeek]=useState(null);
+  const [editMode,setEditMode]=useState(false);
+  const [habitMonth,setHabitMonth]=useState(new Date().getMonth());
+  const [habitYear,setHabitYear]=useState(new Date().getFullYear());
+  const [habitView,setHabitView]=useState("month");
+  // Modals
+  const [showApiModal,setShowApiModal]=useState(false);
+  const [showPlanSel,setShowPlanSel]=useState(false);
+  const [showPlanModal,setShowPlanModal]=useState(null);
+  const [showWeekModal,setShowWeekModal]=useState(null);
+  const [showSesModal,setShowSesModal]=useState(null);
+  const [showHabitConfig,setShowHabitConfig]=useState(false);
+  const [showCombatForm,setShowCombatForm]=useState(false);
+  const [showImport,setShowImport]=useState(false);
+  const [importText,setImportText]=useState("");
+  const [importLoading,setImportLoading]=useState(false);
+  const [copyWeeks,setCopyWeeks]=useState(false);
+  // Chat
+  const [coachMsgs,setCoachMsgs]=useState([{role:"assistant",content:"Hola Vicente! Soy tu entrenador IA. Preguntame sobre BJJ, habitos, nutricion o cualquier duda."}]);
+  const [coachIn,setCoachIn]=useState("");
+  const [coachLoad,setCoachLoad]=useState(false);
+  const [nutriMsgs,setNutriMsgs]=useState([{role:"assistant",content:"Hola! Soy tu nutricionista. Dime que tipo de dia es hoy y te recomiendo las mejores comidas."}]);
+  const [nutriIn,setNutriIn]=useState("");
+  const [nutriLoad,setNutriLoad]=useState(false);
+  const coachRef=useRef(null);
+  const nutriRef=useRef(null);
+  const today=new Date();
+  const todayKey=today.toISOString().split("T")[0];
+  const activePlan=plans.find(p=>p.id===activePlanId)||plans[0];
+
+  useEffect(()=>{coachRef.current&&coachRef.current.scrollIntoView({behavior:"smooth"});},[coachMsgs]);
+  useEffect(()=>{nutriRef.current&&nutriRef.current.scrollIntoView({behavior:"smooth"});},[nutriMsgs]);
+
+  // ── SUPABASE ──
+  useEffect(()=>{
+    const load=async()=>{
+      setSyncing(true);
+      try{
+        const {data}=await sb.from("bjj_progress").select("*").eq("id","vicente").single();
+        if(data){
+          if(data.checked&&Object.keys(data.checked).length>0)setChecked(data.checked);
+          if(data.plans&&data.plans.length>0)setPlans(data.plans);
+          if(data.active_plan)setActivePlanId(data.active_plan);
+          if(data.habits_data&&Object.keys(data.habits_data).length>0)setHabitsData(h=>({...DEFAULT_HABITS_DATA,...data.habits_data}));
+          if(data.habits_list&&data.habits_list.length>0)setHabits(data.habits_list);
+          if(data.energy_log)setEnergyLog(data.energy_log);
+          if(data.combats&&data.combats.length>0)setCombats(data.combats);
+          if(data.api_key)setApiKey(data.api_key);
+        }
+      }catch(e){console.log("load",e);}
+      setSyncing(false);
+    };
+    load();
+    const ch=sb.channel("vhq").on("postgres_changes",{event:"UPDATE",schema:"public",table:"bjj_progress",filter:"id=eq.vicente"},p=>{
+      if(p.new){
+        if(p.new.checked&&Object.keys(p.new.checked).length>0)setChecked(p.new.checked);
+        if(p.new.plans&&p.new.plans.length>0)setPlans(p.new.plans);
+        if(p.new.active_plan)setActivePlanId(p.new.active_plan);
+        if(p.new.habits_data&&Object.keys(p.new.habits_data).length>0)setHabitsData(h=>({...h,...p.new.habits_data}));
+        if(p.new.energy_log)setEnergyLog(p.new.energy_log);
+        if(p.new.combats&&p.new.combats.length>0)setCombats(p.new.combats);
+      }
+    }).subscribe();
+    return()=>sb.removeChannel(ch);
+  },[]);
+
+  const saveTimer=useRef(null);
+  const save=useCallback((nc,np,nap,nhd,nh,nel,ncb,nak)=>{
+    if(saveTimer.current)clearTimeout(saveTimer.current);
+    saveTimer.current=setTimeout(async()=>{
+      setSyncing(true);
+      try{
+        await sb.from("bjj_progress").upsert({
+          id:"vicente",checked:nc,plans:np,active_plan:nap,
+          habits_data:nhd,habits_list:nh,energy_log:nel,combats:ncb,
+          api_key:nak||null,updated_at:new Date().toISOString()
+        });
+      }catch(e){console.log("save",e);}
+      setSyncing(false);
+    },800);
+  },[]);
+
+  const S=(nc=checked,np=plans,nap=activePlanId,nhd=habitsData,nh=habits,nel=energyLog,ncb=combats,nak=apiKey)=>
+    save(nc,np,nap,nhd,nh,nel,ncb,nak);
+
+  // BJJ helpers
+  const totS=activePlan.weeks.reduce((a,w)=>a+w.sessions.length,0);
+  const totD=activePlan.weeks.reduce((a,w)=>a+w.sessions.filter(s=>checked[activePlan.id+"_"+s.id]).length,0);
+  const totP=totS?Math.round(totD/totS*100):0;
+  const wPct=w=>{const t=w.sessions.length,d=w.sessions.filter(s=>checked[activePlan.id+"_"+s.id]).length;return t?Math.round(d/t*100):0;};
+  const ck=sid=>!!checked[activePlan.id+"_"+sid];
+  const toggleCk=sid=>{const n={...checked,[activePlan.id+"_"+sid]:!checked[activePlan.id+"_"+sid]};setChecked(n);S(n);};
+
+  // Habits helpers
+  const getDays=(y,m)=>new Date(y,m+1,0).getDate();
+  const mKey=(y,m)=>y+"-"+m;
+  const getMD=()=>{
+    const k=mKey(habitYear,habitMonth);
+    if(!habitsData[k]){const e={};habits.forEach(h=>{e[h.id]=Array(31).fill(null);});return e;}
+    return habitsData[k];
+  };
+  const toggleH=(hid,day)=>{
+    const k=mKey(habitYear,habitMonth);
+    const md={...getMD()};const arr=[...(md[hid]||Array(31).fill(null))];
+    arr[day]=arr[day]===1?0:arr[day]===0?null:1;
+    md[hid]=arr;const nhd={...habitsData,[k]:md};
+    setHabitsData(nhd);S(checked,plans,activePlanId,nhd);
+    const btn=document.getElementById("hc-"+hid+"-"+day);
+    if(btn){btn.classList.add("pop");setTimeout(()=>btn.classList.remove("pop"),300);}
+  };
+  window._th=toggleH;
+  const hStats=hid=>{const md=getMD();const days=getDays(habitYear,habitMonth);const arr=md[hid]||[];let done=0,tot=0;for(let i=0;i<days;i++){if(arr[i]!==null&&arr[i]!==undefined){tot++;if(arr[i]===1)done++;}}return{done,tot,pct:tot?Math.round(done/tot*100):0};};
+  const dScore=d=>{const md=getMD();return habits.reduce((a,h)=>a+((md[h.id]||[])[d]===1?1:0),0);};
+  const totChecks=()=>habits.reduce((a,h)=>a+hStats(h.id).done,0);
+  const perfectDays=()=>{const d=getDays(habitYear,habitMonth);let c=0;for(let i=0;i<d;i++)if(dScore(i)===habits.length)c++;return c;};
+  const overallPct=()=>Math.round(totChecks()/(habits.length*getDays(habitYear,habitMonth))*100);
+  const sColor=s=>{if(s===habits.length)return"#10b981";if(s>=7)return"#8b5cf6";if(s>=4)return"#f97316";if(s>=1)return"#ef4444";return"#1e293b";};
+  const todayHScore=dScore(today.getDate()-1);
+
+  // Plan ops
+  const savePlan=form=>{
+    let np;
+    if(plans.find(p=>p.id===form.id)){np=plans.map(p=>p.id===form.id?{...p,name:form.name,compDate:form.compDate,compGoal:form.compGoal}:p);}
+    else{
+      let weeks=[];
+      if(copyWeeks&&activePlan)weeks=activePlan.weeks.map(w=>({...w,id:"w_"+uid(),sessions:w.sessions.map(s=>({...s,id:"s_"+uid()}))}));
+      np=[...plans,{...form,id:"plan_"+uid(),weeks,createdAt:new Date().toISOString()}];
+      setActivePlanId(np[np.length-1].id);
+    }
+    setPlans(np);S(checked,np);setShowPlanModal(null);
+  };
+  const saveWeek=form=>{
+    const np=plans.map(p=>{if(p.id!==activePlanId)return p;const ex=p.weeks.find(w=>w.id===form.id);return{...p,weeks:ex?p.weeks.map(w=>w.id===form.id?{...w,...form}:w):[...p.weeks,form]};});
+    setPlans(np);S(checked,np);setShowWeekModal(null);
+  };
+  const saveSes=(weekId,form)=>{
+    const np=plans.map(p=>{if(p.id!==activePlanId)return p;return{...p,weeks:p.weeks.map(w=>{if(w.id!==weekId)return w;const ex=w.sessions.find(s=>s.id===form.id);return{...w,sessions:ex?w.sessions.map(s=>s.id===form.id?form:s):[...w.sessions,form]};})};});
+    setPlans(np);S(checked,np);setShowSesModal(null);
+  };
+  const delSes=(weekId,sid)=>{if(!confirm("Eliminar sesion?"))return;const np=plans.map(p=>p.id!==activePlanId?p:{...p,weeks:p.weeks.map(w=>w.id!==weekId?w:{...w,sessions:w.sessions.filter(s=>s.id!==sid)})});setPlans(np);S(checked,np);};
+  const delWeek=wid=>{if(!confirm("Eliminar semana?"))return;const np=plans.map(p=>p.id!==activePlanId?p:{...p,weeks:p.weeks.filter(w=>w.id!==wid)});setPlans(np);S(checked,np);};
+
+  // AI
+  const callAI=async(system,msgs,setMsgs,setLoad)=>{
+    setLoad(true);
+    if(!apiKey){setMsgs(m=>[...m,{role:"assistant",content:"Configura tu API key de Claude en el boton Config IA del header."}]);setLoad(false);return;}
+    try{
+      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+        headers:{"Content-Type":"application/json","anthropic-dangerous-allow-browser":"true","x-api-key":apiKey},
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,system,messages:msgs.map(m=>({role:m.role,content:m.content}))})});
+      const d=await r.json();
+      setMsgs(m=>[...m,{role:"assistant",content:d.content?.[0]?.text||(d.error?"Error: "+d.error.message:"Error.")}]);
+    }catch(e){setMsgs(m=>[...m,{role:"assistant",content:"Error: "+e.message}]);}
+    setLoad(false);
+  };
+  const sendCoach=()=>{
+    if(!coachIn.trim()||coachLoad)return;
+    const u=coachIn.trim();setCoachIn("");
+    const nm=[...coachMsgs,{role:"user",content:u}];setCoachMsgs(nm);
+    callAI(`Eres el entrenador personal de Vicente, 44 anos, BJJ competidor, CEO, 80kg. BJJ: ${totP}% (${totD}/${totS}). Habitos: ${overallPct()}%. Combates: ${combats.length} (${combats.filter(c=>c.result==="victoria").length} victorias). Espanol, max 120 palabras.`,nm,setCoachMsgs,setCoachLoad);
+  };
+  const sendNutri=()=>{
+    if(!nutriIn.trim()||nutriLoad)return;
+    const u=nutriIn.trim();setNutriIn("");
+    const nm=[...nutriMsgs,{role:"user",content:u}];setNutriMsgs(nm);
+    callAI("Eres el nutricionista de Vicente, atleta BJJ 44 anos, 80kg. Recomendaciones concretas con cantidades. Espanol, max 150 palabras.",nm,setNutriMsgs,setNutriLoad);
+  };
+
+  // Import plan from text
+  const genPlan=async()=>{
+    if(!importText.trim())return;
+    if(!apiKey){alert("Necesitas API key de Claude.");return;}
+    setImportLoading(true);
+    try{
+      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+        headers:{"Content-Type":"application/json","anthropic-dangerous-allow-browser":"true","x-api-key":apiKey},
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,
+          system:`Convierte texto de plan BJJ en JSON. Solo JSON valido sin markdown:
+{"name":"nombre","compDate":"YYYY-MM-DD","compGoal":"objetivo","weeks":[{"label":"SEMANA 1","dates":"fechas","fase":"descripcion","color":"#1a3a6b","sessions":[{"type":"BJJ","name":"nombre","dur":"90'","intensity":"Media","desc":"descripcion"}]}]}`,
+          messages:[{role:"user",content:"Convierte en JSON:\n\n"+importText}]})});
+      const d=await r.json();
+      const txt=d.content?.[0]?.text||"";
+      const parsed=JSON.parse(txt.replace(/```json|```/g,"").trim());
+      const newPlan={...parsed,id:"plan_"+uid(),createdAt:new Date().toISOString(),
+        weeks:(parsed.weeks||[]).map(w=>({...w,id:"w_"+uid(),sessions:(w.sessions||[]).map(s=>({...s,id:"s_"+uid()}))}))};
+      const np=[...plans,newPlan];setPlans(np);setActivePlanId(newPlan.id);
+      S(checked,np,newPlan.id);setShowImport(false);setImportText("");
+      alert("Plan creado: "+newPlan.name+" con "+newPlan.weeks.length+" semanas");
+    }catch(e){alert("Error: "+e.message);}
+    setImportLoading(false);
+  };
+
+  const daysToComp=activePlan.compDate?Math.ceil((new Date(activePlan.compDate)-today)/86400000):null;
+  const inp={background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"8px 12px",color:"#f1f5f9",fontSize:13,width:"100%",fontFamily:"inherit"};
+
+  const ChatPanel=({msgs,input,setInput,onSend,loading,endRef,sugs,placeholder,color,label})=>(
+    <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 270px)",minHeight:340,background:"#0a0f1e",borderRadius:14,border:"1px solid #1e293b",overflow:"hidden"}}>
+      <div style={{flex:1,overflowY:"auto",padding:14,display:"flex",flexDirection:"column",gap:9,WebkitOverflowScrolling:"touch"}}>
+        {msgs.map((m,i)=>(
+          <div key={i} style={m.role==="user"?{alignSelf:"flex-end",background:"linear-gradient(135deg,#166534,#15803d)",color:"#fff",padding:"9px 12px",borderRadius:"14px 14px 4px 14px",maxWidth:"78%",fontSize:12,lineHeight:1.5}:{alignSelf:"flex-start",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",padding:"10px 12px",borderRadius:"4px 14px 14px 14px",maxWidth:"84%",fontSize:12,lineHeight:1.6}}>
+            {m.role==="assistant"&&<div style={{fontSize:9,color,fontWeight:700,marginBottom:3}}>{label}</div>}
+            <div style={{whiteSpace:"pre-wrap"}}>{m.content}</div>
+          </div>
+        ))}
+        {loading&&<div style={{alignSelf:"flex-start",background:"#1e293b",padding:"10px 12px",borderRadius:"4px 14px 14px 14px",color:"#475569",fontSize:12}}>Analizando...</div>}
+        <div ref={endRef}/>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:5,padding:"0 12px 7px"}}>
+        {sugs.map((s,i)=><button key={i} onClick={()=>setInput(s)} style={{background:"#0f172a",border:"1px solid #1e293b",color:"#64748b",fontSize:10,padding:"3px 8px",borderRadius:16,cursor:"pointer"}}>{s}</button>)}
+      </div>
+      <div style={{display:"flex",gap:7,padding:"9px 12px",borderTop:"1px solid #1e293b",background:"#030712"}}>
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&onSend()} placeholder={placeholder}
+          style={{flex:1,background:"#0f172a",border:"1px solid #1e293b",borderRadius:9,padding:"8px 11px",color:"#f1f5f9",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+        <button onClick={onSend} disabled={loading} style={{background:loading?"#1e293b":"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",border:"none",borderRadius:9,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:loading?"not-allowed":"pointer"}}>
+          {loading?"...":"Enviar"}
+        </button>
+      </div>
+    </div>
+  );
+
+  const TABS=[["dashboard","🏠","INICIO"],["bjj","🥋","BJJ"],["habitos","✅","HÁBITOS"],["combates","🏆","COMBATES"],["nutri","🥗","NUTRICIÓN"],["coach","🤖","COACH IA"]];
+
+  return(
+    <div style={{minHeight:"100vh",background:"#030712",color:"#e2e8f0",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+
+      {/* ── MODALS ── */}
+      {showApiModal&&(
+        <Modal onClose={()=>setShowApiModal(false)}>
+          <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:8}}>API Key de Claude</div>
+          <div style={{fontSize:11,color:"#64748b",marginBottom:14,lineHeight:1.5}}>console.anthropic.com · Se guarda en Supabase y sincroniza entre dispositivos</div>
+          <Field label="API Key"><input value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-ant-api03-..." style={{...inp,fontFamily:"monospace"}}/></Field>
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={()=>setShowApiModal(false)} style={{flex:1,background:"#1e293b",color:"#94a3b8"}}>Cancelar</Btn>
+            <Btn onClick={()=>{S(checked,plans,activePlanId,habitsData,habits,energyLog,combats,apiKey);setShowApiModal(false);}} style={{flex:2,background:"linear-gradient(135deg,#7c3aed,#4f46e5)",color:"#fff"}}>Guardar</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {showPlanSel&&(
+        <Modal onClose={()=>setShowPlanSel(false)}>
+          <div style={{fontSize:13,fontWeight:700,color:"#f1f5f9",marginBottom:12}}>Planes</div>
+          {plans.map(p=>(
+            <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 11px",borderRadius:9,background:p.id===activePlanId?"#1e293b":"transparent",marginBottom:5,cursor:"pointer"}} onClick={()=>{setActivePlanId(p.id);S(checked,plans,p.id);setShowPlanSel(false);}}>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:p.id===activePlanId?"#22c55e":"#e2e8f0"}}>{p.name}</div><div style={{fontSize:10,color:"#64748b"}}>{p.compDate||"Sin fecha"} · {p.compGoal}</div></div>
+              <button onClick={e=>{e.stopPropagation();setShowPlanModal(p);setCopyWeeks(false);setShowPlanSel(false);}} style={{background:"#334155",border:"none",color:"#94a3b8",borderRadius:5,padding:"3px 7px",cursor:"pointer",fontSize:11}}>Ed</button>
+              {plans.length>1&&<button onClick={e=>{e.stopPropagation();if(!confirm("Eliminar?"))return;const np=plans.filter(x=>x.id!==p.id);setPlans(np);if(activePlanId===p.id)setActivePlanId(np[0].id);S(checked,np,np[0].id);}} style={{background:"#2d0a0a",border:"none",color:"#f87171",borderRadius:5,padding:"3px 7px",cursor:"pointer",fontSize:11}}>X</button>}
+            </div>
+          ))}
+          <Btn onClick={()=>{setShowPlanModal({});setCopyWeeks(false);setShowPlanSel(false);}} style={{width:"100%",background:"linear-gradient(135deg,#7c3aed,#4f46e5)",color:"#fff",marginTop:8}}>+ Nuevo plan</Btn>
+        </Modal>
+      )}
+
+      {showPlanModal!==null&&(()=>{
+        const isNew=!showPlanModal.id;
+        const [f,setF]=useState(isNew?{name:"",compDate:"",compGoal:""}:{name:showPlanModal.name,compDate:showPlanModal.compDate||"",compGoal:showPlanModal.compGoal||""});
+        return <Modal onClose={()=>setShowPlanModal(null)}>
+          <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:14}}>{isNew?"Nuevo plan":"Editar plan"}</div>
+          <Field label="Nombre"><input value={f.name} onChange={e=>setF(x=>({...x,name:e.target.value}))} style={inp}/></Field>
+          <Field label="Fecha competicion"><input type="date" value={f.compDate} onChange={e=>setF(x=>({...x,compDate:e.target.value}))} style={inp}/></Field>
+          <Field label="Objetivo"><input value={f.compGoal} onChange={e=>setF(x=>({...x,compGoal:e.target.value}))} style={inp}/></Field>
+          {isNew&&<div onClick={()=>setCopyWeeks(v=>!v)} style={{display:"flex",alignItems:"center",gap:9,background:copyWeeks?"#052e16":"#0f172a",border:"1px solid "+(copyWeeks?"#22c55e40":"#1e293b"),borderRadius:9,padding:"9px 12px",cursor:"pointer",marginBottom:12}}>
+            <div style={{width:17,height:17,borderRadius:4,border:"2px solid "+(copyWeeks?"#22c55e":"#334155"),background:copyWeeks?"#22c55e":"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff"}}>{copyWeeks?"✓":""}</div>
+            <div style={{fontSize:12,color:copyWeeks?"#22c55e":"#94a3b8"}}>Copiar semanas del plan actual ({activePlan.weeks.length} semanas)</div>
+          </div>}
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={()=>setShowPlanModal(null)} style={{flex:1,background:"#1e293b",color:"#94a3b8"}}>Cancelar</Btn>
+            <Btn onClick={()=>savePlan({...showPlanModal,...f})} style={{flex:2,background:"linear-gradient(135deg,#7c3aed,#4f46e5)",color:"#fff"}}>Guardar</Btn>
+          </div>
+        </Modal>;
+      })()}
+
+      {showWeekModal!==null&&(()=>{
+        const isNew=!showWeekModal.id;
+        const [f,setF]=useState(isNew?{label:"",dates:"",fase:"",color:"#1a3a6b"}:{...showWeekModal});
+        return <Modal onClose={()=>setShowWeekModal(null)}>
+          <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:14}}>{isNew?"Nueva semana":"Editar semana"}</div>
+          <Field label="Nombre"><input value={f.label} onChange={e=>setF(x=>({...x,label:e.target.value}))} style={inp} placeholder="SEMANA 1"/></Field>
+          <Field label="Fechas"><input value={f.dates} onChange={e=>setF(x=>({...x,dates:e.target.value}))} style={inp} placeholder="16-22 MAR"/></Field>
+          <Field label="Fase"><input value={f.fase} onChange={e=>setF(x=>({...x,fase:e.target.value}))} style={inp} placeholder="INTENSIFICACION..."/></Field>
+          <Field label="Color"><div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{WCOLORS.map(c=><button key={c} onClick={()=>setF(x=>({...x,color:c}))} style={{width:26,height:26,borderRadius:5,background:c,border:f.color===c?"2px solid #fff":"2px solid transparent",cursor:"pointer"}}/>)}</div></Field>
+          <div style={{display:"flex",gap:8,marginTop:6}}>
+            <Btn onClick={()=>setShowWeekModal(null)} style={{flex:1,background:"#1e293b",color:"#94a3b8"}}>Cancelar</Btn>
+            <Btn onClick={()=>saveWeek({...f,id:f.id||"w_"+uid(),sessions:f.sessions||[]})} style={{flex:2,background:"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff"}}>Guardar</Btn>
+          </div>
+        </Modal>;
+      })()}
+
+      {showSesModal!==null&&(()=>{
+        const s=showSesModal.ses;
+        const [f,setF]=useState(s||{type:"BJJ",name:"",dur:"60'",intensity:"Media",desc:""});
+        return <Modal onClose={()=>setShowSesModal(null)}>
+          <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:14}}>{s?"Editar sesion":"Nueva sesion"}</div>
+          <Field label="Nombre"><input value={f.name} onChange={e=>setF(x=>({...x,name:e.target.value}))} style={inp} placeholder="Sparring Competitivo"/></Field>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <Field label="Tipo"><select value={f.type} onChange={e=>setF(x=>({...x,type:e.target.value}))} style={inp}>{TIPOS.map(t=><option key={t}>{t}</option>)}</select></Field>
+            <Field label="Intensidad"><select value={f.intensity} onChange={e=>setF(x=>({...x,intensity:e.target.value}))} style={inp}>{INTENSIDADES.map(t=><option key={t}>{t}</option>)}</select></Field>
+            <Field label="Duracion"><input value={f.dur} onChange={e=>setF(x=>({...x,dur:e.target.value}))} style={inp} placeholder="90'"/></Field>
+          </div>
+          <Field label="Descripcion"><textarea value={f.desc} onChange={e=>setF(x=>({...x,desc:e.target.value}))} rows={3} style={{...inp,resize:"vertical"}} placeholder="Descripcion..."/></Field>
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={()=>setShowSesModal(null)} style={{flex:1,background:"#1e293b",color:"#94a3b8"}}>Cancelar</Btn>
+            <Btn onClick={()=>saveSes(showSesModal.weekId,{...f,id:f.id||"s_"+uid()})} style={{flex:2,background:"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff"}}>Guardar</Btn>
+          </div>
+        </Modal>;
+      })()}
+
+      {showHabitConfig&&(()=>{
+        const [hf,setHf]=useState({name:"",icon:"⭐",category:"mente"});
+        const addH=()=>{if(!hf.name.trim())return;const newId=Math.max(0,...habits.map(h=>h.id))+1;const nh=[...habits,{id:newId,...hf}];setHabits(nh);setHf({name:"",icon:"⭐",category:"mente"});S(checked,plans,activePlanId,habitsData,nh);};
+        const delH=id=>{if(!confirm("Eliminar?"))return;const nh=habits.filter(h=>h.id!==id);setHabits(nh);S(checked,plans,activePlanId,habitsData,nh);};
+        const updH=(id,k,v)=>{const nh=habits.map(h=>h.id===id?{...h,[k]:v}:h);setHabits(nh);S(checked,plans,activePlanId,habitsData,nh);};
+        return <Modal onClose={()=>setShowHabitConfig(false)} maxW={540}>
+          <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:14}}>Configurar habitos</div>
+          <div style={{background:"#1e293b",borderRadius:10,padding:13,marginBottom:14}}>
+            <div style={{fontSize:10,color:"#8b5cf6",fontWeight:700,textTransform:"uppercase",marginBottom:9}}>Nuevo habito</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 50px 1fr",gap:7,marginBottom:7}}>
+              <input value={hf.name} onChange={e=>setHf(x=>({...x,name:e.target.value}))} placeholder="Nombre" style={inp}/>
+              <input value={hf.icon} onChange={e=>setHf(x=>({...x,icon:e.target.value}))} style={{...inp,textAlign:"center"}}/>
+              <select value={hf.category} onChange={e=>setHf(x=>({...x,category:e.target.value}))} style={inp}><option value="energía">Energia</option><option value="mente">Mente</option><option value="relaciones">Relaciones</option><option value="crecimiento">Crecimiento</option></select>
+            </div>
+            <Btn onClick={addH} style={{width:"100%",background:"linear-gradient(135deg,#7c3aed,#4f46e5)",color:"#fff"}}>+ Añadir habito</Btn>
+          </div>
+          <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",marginBottom:8}}>Habitos actuales ({habits.length})</div>
+          {habits.map(h=>(
+            <div key={h.id} style={{display:"flex",alignItems:"center",gap:7,padding:"8px 10px",background:"#1e293b",borderRadius:8,marginBottom:6}}>
+              <input value={h.icon} onChange={e=>updH(h.id,"icon",e.target.value)} style={{width:32,background:"#334155",border:"none",borderRadius:5,padding:"3px",color:"#f1f5f9",fontSize:15,textAlign:"center",fontFamily:"inherit"}}/>
+              <input value={h.name} onChange={e=>updH(h.id,"name",e.target.value)} style={{flex:1,background:"#334155",border:"none",borderRadius:5,padding:"5px 8px",color:"#f1f5f9",fontSize:12,fontFamily:"inherit"}}/>
+              <select value={h.category} onChange={e=>updH(h.id,"category",e.target.value)} style={{background:"#334155",border:"none",borderRadius:5,padding:"5px 7px",color:CAT_COLOR[h.category]||"#94a3b8",fontSize:10,fontFamily:"inherit"}}>
+                <option value="energía">Energia</option><option value="mente">Mente</option><option value="relaciones">Relaciones</option><option value="crecimiento">Crecimiento</option>
+              </select>
+              <button onClick={()=>delH(h.id)} style={{background:"#2d0a0a",border:"none",color:"#f87171",width:26,height:26,borderRadius:5,cursor:"pointer",fontSize:12}}>X</button>
+            </div>
+          ))}
+          <Btn onClick={()=>setShowHabitConfig(false)} style={{width:"100%",background:"#1e293b",color:"#94a3b8",marginTop:10}}>Cerrar</Btn>
+        </Modal>;
+      })()}
+
+      {showCombatForm&&(()=>{
+        const [f,setF]=useState({date:todayKey,rival:"",result:"victoria",category:"gi",techniques:"",notes:""});
+        const add=()=>{const nc=[...combats,{...f,id:"c_"+uid()}];setCombats(nc);S(checked,plans,activePlanId,habitsData,habits,energyLog,nc);setShowCombatForm(false);};
+        return <Modal onClose={()=>setShowCombatForm(false)}>
+          <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:14}}>Registrar combate</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9}}>
+            <Field label="Fecha"><input type="date" value={f.date} onChange={e=>setF(x=>({...x,date:e.target.value}))} style={inp}/></Field>
+            <Field label="Rival"><input value={f.rival} onChange={e=>setF(x=>({...x,rival:e.target.value}))} style={inp} placeholder="Nombre/descripcion"/></Field>
+            <Field label="Resultado"><select value={f.result} onChange={e=>setF(x=>({...x,result:e.target.value}))} style={inp}><option value="victoria">Victoria</option><option value="derrota">Derrota</option><option value="empate">Empate</option></select></Field>
+            <Field label="Categoria"><select value={f.category} onChange={e=>setF(x=>({...x,category:e.target.value}))} style={inp}><option value="gi">Gi (Kimono)</option><option value="nogi">No-Gi</option><option value="absoluto">Absoluto</option></select></Field>
+          </div>
+          <Field label="Tecnicas usadas"><input value={f.techniques} onChange={e=>setF(x=>({...x,techniques:e.target.value}))} style={inp} placeholder="Guardia, norte-sur choke, americana..."/></Field>
+          <Field label="Notas / aprendizajes"><textarea value={f.notes} onChange={e=>setF(x=>({...x,notes:e.target.value}))} rows={3} style={{...inp,resize:"vertical"}} placeholder="Que funciono, que mejorar..."/></Field>
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={()=>setShowCombatForm(false)} style={{flex:1,background:"#1e293b",color:"#94a3b8"}}>Cancelar</Btn>
+            <Btn onClick={add} style={{flex:2,background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#fff"}}>Guardar combate</Btn>
+          </div>
+        </Modal>;
+      })()}
+
+      {showImport&&(
+        <Modal onClose={()=>setShowImport(false)} maxW={600}>
+          <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:6}}>Generar plan desde texto con IA</div>
+          <div style={{fontSize:11,color:"#64748b",marginBottom:12,lineHeight:1.5}}>Pega cualquier texto con el plan. La IA lo convierte en semanas y sesiones estructuradas.</div>
+          <textarea value={importText} onChange={e=>setImportText(e.target.value)} rows={9}
+            style={{...inp,fontSize:12,lineHeight:1.6,resize:"vertical",marginBottom:12}}
+            placeholder={"Semana 1 - Intensificacion\n- Lunes: BJJ tecnica 90 min\n- Martes: Fuerza 60 min\n..."}/>
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={()=>setShowImport(false)} style={{flex:1,background:"#1e293b",color:"#94a3b8"}}>Cancelar</Btn>
+            <Btn onClick={genPlan} disabled={importLoading} style={{flex:2,background:importLoading?"#1e293b":"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff"}}>
+              {importLoading?"Generando...":"Generar plan con IA"}
+            </Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── HEADER ── */}
+      <div style={{background:"linear-gradient(135deg,#0a0f1e,#0f172a)",borderBottom:"1px solid #1e293b",padding:"11px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,position:"sticky",top:0,zIndex:50}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:38,height:38,background:"linear-gradient(135deg,#7c3aed,#4f46e5)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19}}>⚡</div>
+          <div>
+            <div style={{fontFamily:"monospace",fontSize:8,color:"#f97316",letterSpacing:"3px"}}>VICENTE · HQ</div>
+            <div style={{fontSize:15,fontWeight:900,letterSpacing:"-0.5px"}}>Super App Personal</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
+            <div style={{width:7,height:7,borderRadius:"50%",background:syncing?"#f59e0b":"#22c55e",boxShadow:"0 0 5px "+(syncing?"#f59e0b":"#22c55e"),transition:"all 0.3s"}}/>
+            <div style={{fontSize:8,color:syncing?"#f59e0b":"#22c55e",fontFamily:"monospace"}}>{syncing?"sync":"OK"}</div>
+          </div>
+          <button onClick={()=>setShowApiModal(true)} style={{background:apiKey?"#052e16":"#1e293b",border:"1px solid "+(apiKey?"#22c55e40":"#334155"),color:apiKey?"#22c55e":"#94a3b8",borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:10,fontWeight:600}}>{apiKey?"IA ON":"Config IA"}</button>
+          <Circ pct={totP} size={48} color="#22c55e"/>
+          <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:8,padding:"3px 9px",textAlign:"center"}}>
+            <div style={{fontSize:10,color:"#8b5cf6",fontWeight:700}}>{overallPct()}%</div>
+            <div style={{fontSize:7,color:"#64748b"}}>Habitos</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── TABS ── */}
+      <div style={{display:"flex",background:"#0f172a",padding:"0 8px",borderBottom:"1px solid #1e293b",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        {TABS.map(([k,icon,label])=>(
+          <button key={k} onClick={()=>setTab(k)} style={{padding:"9px 12px",fontSize:10,fontWeight:600,letterSpacing:"0.04em",textTransform:"uppercase",cursor:"pointer",border:"none",background:"none",color:tab===k?"#7c3aed":"#475569",borderBottom:tab===k?"2px solid #7c3aed":"2px solid transparent",transition:"all 0.2s",whiteSpace:"nowrap",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+            <span style={{fontSize:16}}>{icon}</span>
+            <span>{label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div style={{maxWidth:1060,margin:"0 auto",padding:"16px 12px"}}>
+
+        {/* ── DASHBOARD ── */}
+        {tab==="dashboard"&&(
+          <div>
+            <div style={{fontFamily:"monospace",fontSize:9,color:"#f97316",letterSpacing:"3px",marginBottom:12}}>
+              {today.toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"}).toUpperCase()}
+            </div>
+            {/* KPIs */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:14}}>
+              {[
+                {l:"BJJ Plan",v:totP+"%",s:totD+"/"+totS+" sesiones",c:"#22c55e",i:"🥋",a:()=>setTab("bjj")},
+                {l:"Habitos hoy",v:todayHScore+"/"+habits.length,s:"puntos del dia",c:"#8b5cf6",i:"✅",a:()=>setTab("habitos")},
+                {l:"Habitos mes",v:overallPct()+"%",s:MONTHS[habitMonth],c:"#f97316",i:"📊",a:()=>setTab("habitos")},
+                {l:"Combates",v:combats.length,s:combats.filter(c=>c.result==="victoria").length+" victorias",c:"#f59e0b",i:"🏆",a:()=>setTab("combates")},
+                {l:"Dias comp.",v:daysToComp!==null?(daysToComp>0?daysToComp:"Hoy!"):"—",s:activePlan.compGoal||"",c:"#ef4444",i:"⏰",a:()=>setTab("bjj")},
+              ].map((k,i)=>(
+                <div key={i} onClick={k.a} style={{background:"#0f172a",border:"1px solid "+k.c+"22",borderRadius:12,padding:"11px",cursor:"pointer"}}>
+                  <div style={{fontSize:17,marginBottom:4}}>{k.i}</div>
+                  <div style={{fontSize:19,fontWeight:900,color:k.c,lineHeight:1}}>{k.v}</div>
+                  <div style={{fontSize:10,fontWeight:600,color:"#94a3b8",marginTop:3}}>{k.l}</div>
+                  <div style={{fontSize:9,color:"#475569",marginTop:1}}>{k.s}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Graficos */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+              {/* BJJ barras */}
+              <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:13,padding:13}}>
+                <div style={{fontSize:10,fontWeight:700,color:"#22c55e",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>BJJ · Sesiones por semana</div>
+                <div style={{display:"flex",gap:5,alignItems:"flex-end",height:70}}>
+                  {activePlan.weeks.map(w=>{
+                    const tot=w.sessions.length;
+                    const done=w.sessions.filter(s=>checked[activePlan.id+"_"+s.id]).length;
+                    const maxV=Math.max(...activePlan.weeks.map(x=>x.sessions.length),1);
+                    const hT=Math.round((tot/maxV)*60),hD=tot>0?Math.round((done/tot)*hT):0;
+                    return <div key={w.id} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      <div style={{fontSize:8,color:w.color,fontWeight:700}}>{done}/{tot}</div>
+                      <div style={{width:"100%",height:60,position:"relative"}}>
+                        <div style={{width:"100%",height:hT,background:"#1e293b",borderRadius:"3px 3px 0 0",position:"absolute",bottom:0}}/>
+                        <div style={{width:"100%",height:hD,background:"linear-gradient(180deg,"+w.color+","+w.color+"88)",borderRadius:"3px 3px 0 0",position:"absolute",bottom:0,transition:"height 0.6s"}}/>
+                      </div>
+                      <div style={{fontSize:7,color:"#475569",textAlign:"center"}}>{w.label.replace("SEMANA ","S")}</div>
+                    </div>;
+                  })}
+                </div>
+              </div>
+              {/* Habitos 14 dias */}
+              <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:13,padding:13}}>
+                <div style={{fontSize:10,fontWeight:700,color:"#8b5cf6",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>Habitos · 14 dias</div>
+                <div style={{display:"flex",gap:3,alignItems:"flex-end",height:70}}>
+                  {Array.from({length:14},(_,i)=>{
+                    const d=new Date(today);d.setDate(today.getDate()-13+i);
+                    const isThisMonth=d.getMonth()===habitMonth&&d.getFullYear()===habitYear;
+                    const score=isThisMonth?dScore(d.getDate()-1):0;
+                    const isToday=d.toDateString()===today.toDateString();
+                    const maxS=habits.length||1;
+                    const h2=Math.max(Math.round((score/maxS)*60),score>0?3:0);
+                    const col=sColor(score);
+                    return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      <div style={{width:"100%",height:60,position:"relative"}}>
+                        <div style={{width:"100%",height:Math.max(h2,2),background:col,borderRadius:"3px 3px 0 0",position:"absolute",bottom:0,border:isToday?"2px solid #f97316":"none"}}/>
+                      </div>
+                      <div style={{fontSize:7,color:isToday?"#f97316":"#475569"}}>{d.getDate()}</div>
+                    </div>;
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Circulos categorias */}
+            <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:13,padding:13,marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#f97316",marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"}}>Cumplimiento este mes</div>
+              <div style={{display:"flex",gap:12,flexWrap:"wrap",justifyContent:"space-around"}}>
+                {Object.entries(CAT_COLOR).map(([cat,col])=>{
+                  const catH=habits.filter(h=>h.category===cat);
+                  if(!catH.length)return null;
+                  const avg=Math.round(catH.reduce((a,h)=>a+hStats(h.id).pct,0)/catH.length);
+                  return <div key={cat} style={{textAlign:"center"}}>
+                    <Circ pct={avg} size={58} color={col}/>
+                    <div style={{fontSize:9,fontWeight:700,color:col,marginTop:3,textTransform:"capitalize"}}>{cat}</div>
+                  </div>;
+                })}
+                {Object.entries(TC).slice(0,3).map(([type,cfg])=>{
+                  let t=0,d=0;activePlan.weeks.forEach(w=>w.sessions.forEach(s=>{if(s.type===type){t++;if(checked[activePlan.id+"_"+s.id])d++;}}));
+                  return <div key={type} style={{textAlign:"center"}}>
+                    <Circ pct={t?Math.round(d/t*100):0} size={58} color={cfg.c}/>
+                    <div style={{fontSize:9,fontWeight:700,color:cfg.c,marginTop:3}}>{type}</div>
+                  </div>;
+                })}
+              </div>
+            </div>
+
+            {/* Energia */}
+            <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:13,padding:13,marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#f1f5f9",marginBottom:9}}>⚡ Energia de hoy</div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {[1,2,3,4,5,6,7,8,9,10].map(v=>{
+                  const sel=(energyLog[todayKey]||0)===v;
+                  const col=v>=8?"#10b981":v>=5?"#f97316":"#ef4444";
+                  return <button key={v} onClick={()=>{const nel={...energyLog,[todayKey]:v};setEnergyLog(nel);S(checked,plans,activePlanId,habitsData,habits,nel);}}
+                    style={{width:34,height:34,borderRadius:7,border:"2px solid "+(sel?col:"#1e293b"),background:sel?col+"20":"#1e293b",color:sel?col:"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",transition:"all 0.2s"}}>{v}</button>;
+                })}
+              </div>
+              <div style={{fontSize:10,color:"#64748b",marginTop:7}}>1-3 agotado · 4-6 normal · 7-8 bien · 9-10 excelente</div>
+            </div>
+
+            {/* Habitos rapidos hoy */}
+            <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:13,padding:13}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#f1f5f9",marginBottom:9}}>
+                Habitos de hoy — {today.toLocaleDateString("es-ES",{day:"numeric",month:"long"})}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(185px,1fr))",gap:7}}>
+                {habits.map(h=>{
+                  const d=today.getDate()-1;
+                  const md=getMD();
+                  const val=(md[h.id]||[])[d];
+                  const col=CAT_COLOR[h.category]||"#94a3b8";
+                  return <button key={h.id} onClick={()=>toggleH(h.id,d)}
+                    style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:9,border:"1px solid "+(val===1?col+"50":"#334155"),background:val===1?col+"15":val===0?"#2d0a0a":"#1e293b",cursor:"pointer",textAlign:"left",transition:"all 0.15s"}}>
+                    <span style={{fontSize:16}}>{h.icon}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:11,fontWeight:600,color:val===1?col:val===0?"#f87171":"#94a3b8"}}>{h.name}</div>
+                      <div style={{fontSize:9,color:"#475569"}}>{val===1?"Hecho":val===0?"No hecho":"Pendiente"}</div>
+                    </div>
+                  </button>;
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── BJJ ── */}
+        {tab==="bjj"&&(
+          <div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(78px,1fr))",gap:6,marginBottom:12}}>
+              {Object.entries(TC).map(([type,cfg])=>{
+                let t=0,d=0;activePlan.weeks.forEach(w=>w.sessions.forEach(s=>{if(s.type===type){t++;if(checked[activePlan.id+"_"+s.id])d++;}}));
+                return <div key={type} style={{background:"#0f172a",border:"1px solid "+cfg.c+"22",borderRadius:8,padding:"8px",textAlign:"center"}}>
+                  <div style={{fontSize:15,fontWeight:800,color:cfg.c}}>{t?Math.round(d/t*100):0}%</div>
+                  <div style={{fontSize:8,color:"#64748b",textTransform:"uppercase",marginTop:1}}>{type}</div>
+                </div>;
+              })}
+              <div style={{background:"#0f172a",border:"1px solid #f59e0b22",borderRadius:8,padding:"8px",textAlign:"center"}}>
+                <div style={{fontSize:15,fontWeight:800,color:"#f59e0b"}}>{totD}/{totS}</div>
+                <div style={{fontSize:8,color:"#64748b",textTransform:"uppercase",marginTop:1}}>Total</div>
+              </div>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:7}}>
+              <button onClick={()=>setShowPlanSel(true)} style={{background:"#1e293b",border:"1px solid #334155",color:"#94a3b8",borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:11}}>{activePlan.name} ▾</button>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <button onClick={()=>setEditMode(e=>!e)} style={{background:editMode?"#16a34a20":"#1e293b",border:"1px solid "+(editMode?"#22c55e":"#334155"),color:editMode?"#22c55e":"#64748b",borderRadius:7,padding:"5px 9px",cursor:"pointer",fontSize:10,fontWeight:600}}>{editMode?"✓ Editando":"Editar"}</button>
+                {editMode&&<button onClick={()=>setShowWeekModal({})} style={{background:"linear-gradient(135deg,#1a3a6b,#1e40af)",border:"none",color:"#fff",borderRadius:7,padding:"5px 9px",cursor:"pointer",fontSize:10,fontWeight:600}}>+ Semana</button>}
+                <button onClick={()=>setShowImport(true)} style={{background:"linear-gradient(135deg,#059669,#047857)",border:"none",color:"#fff",borderRadius:7,padding:"5px 9px",cursor:"pointer",fontSize:10,fontWeight:600}}>✨ Importar IA</button>
+              </div>
+            </div>
+            {activePlan.weeks.map(week=>{
+              const pct=wPct(week),exp=expWeek===week.id;
+              return <div key={week.id} style={{background:"#0a0f1e",border:"1px solid "+(exp?week.color+"80":"#1e293b"),borderRadius:12,marginBottom:8,overflow:"hidden"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",cursor:"pointer",background:"linear-gradient(135deg,"+week.color+"12,transparent)"}} onClick={()=>setExpWeek(exp?null:week.id)}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                      <span style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>{week.label}</span>
+                      <span style={{fontSize:9,color:"#64748b"}}>{week.dates}</span>
+                      <span style={{fontSize:9,background:week.color+"20",color:week.color,padding:"2px 7px",borderRadius:20,fontWeight:700}}>{pct}%</span>
+                    </div>
+                    <div style={{fontSize:9,color:"#64748b",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{week.fase}</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:7,flexShrink:0,marginLeft:8}}>
+                    {editMode&&<div style={{display:"flex",gap:3}} onClick={e=>e.stopPropagation()}>
+                      <button onClick={()=>setShowWeekModal(week)} style={{background:"#1e293b",border:"none",color:"#64748b",width:24,height:24,borderRadius:5,cursor:"pointer",fontSize:9}}>Ed</button>
+                      <button onClick={()=>delWeek(week.id)} style={{background:"#2d0a0a",border:"none",color:"#f87171",width:24,height:24,borderRadius:5,cursor:"pointer",fontSize:9}}>X</button>
+                    </div>}
+                    <div style={{width:48,height:4,background:"#1e293b",borderRadius:3,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",background:week.color,borderRadius:3}}/></div>
+                    <span style={{color:"#475569",fontSize:11}}>{exp?"▲":"▼"}</span>
+                  </div>
+                </div>
+                {exp&&<div>
+                  {week.sessions.map(s=>{
+                    const done=ck(s.id);
+                    return <div key={s.id} style={{padding:"8px 14px",borderTop:"1px solid #0a0f1e",background:done?"#052e1615":"transparent",display:"flex",alignItems:"flex-start",gap:7}}>
+                      <button onClick={()=>toggleCk(s.id)} style={{width:23,height:23,borderRadius:5,border:"2px solid "+(done?"#22c55e":"#334155"),background:done?"#22c55e15":"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#22c55e",flexShrink:0,marginTop:1}}>{done?"✓":""}</button>
+                      <div style={{background:TC[s.type]?.b,color:TC[s.type]?.c,fontSize:8,fontWeight:700,padding:"2px 5px",borderRadius:4,flexShrink:0,marginTop:2}}>{s.type}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                          <span style={{fontSize:12,fontWeight:600,color:done?"#475569":"#e2e8f0",textDecoration:done?"line-through":"none"}}>{s.name}</span>
+                          <span style={{fontSize:10,color:"#22c55e",fontWeight:700}}>{s.dur}</span>
+                          <span style={{fontSize:9,color:IC[s.intensity]||"#94a3b8",fontWeight:600}}>{s.intensity}</span>
+                        </div>
+                        <div style={{fontSize:9,color:"#475569",marginTop:1,lineHeight:1.4}}>{s.desc}</div>
+                      </div>
+                      {editMode&&<div style={{display:"flex",gap:3,flexShrink:0}}>
+                        <button onClick={()=>setShowSesModal({weekId:week.id,ses:s})} style={{background:"#1e293b",border:"none",color:"#64748b",width:22,height:22,borderRadius:4,cursor:"pointer",fontSize:9}}>Ed</button>
+                        <button onClick={()=>delSes(week.id,s.id)} style={{background:"#2d0a0a",border:"none",color:"#f87171",width:22,height:22,borderRadius:4,cursor:"pointer",fontSize:9}}>X</button>
+                      </div>}
+                    </div>;
+                  })}
+                  {editMode&&<div style={{padding:"8px 14px",borderTop:"1px solid #0a0f1e"}}>
+                    <button onClick={()=>setShowSesModal({weekId:week.id,ses:null})} style={{width:"100%",background:"#052e16",border:"1px dashed #22c55e30",color:"#22c55e",borderRadius:7,padding:"6px",cursor:"pointer",fontSize:11,fontWeight:600}}>+ Añadir sesion</button>
+                  </div>}
+                </div>}
+              </div>;
+            })}
+          </div>
+        )}
+
+        {/* ── HABITOS ── */}
+        {tab==="habitos"&&(
+          <div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <button onClick={()=>{if(habitMonth===0){setHabitMonth(11);setHabitYear(y=>y-1);}else setHabitMonth(m=>m-1);}} style={{background:"#1e293b",border:"1px solid #334155",color:"#94a3b8",borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:16}}>‹</button>
+                <div style={{fontSize:17,fontWeight:800,minWidth:155,textAlign:"center"}}>{MONTHS[habitMonth]} <span style={{color:"#64748b",fontWeight:400,fontSize:14}}>{habitYear}</span></div>
+                <button onClick={()=>{if(habitMonth===11){setHabitMonth(0);setHabitYear(y=>y+1);}else setHabitMonth(m=>m+1);}} style={{background:"#1e293b",border:"1px solid #334155",color:"#94a3b8",borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:16}}>›</button>
+              </div>
+              <div style={{display:"flex",gap:7,alignItems:"center"}}>
+                <button onClick={()=>setShowHabitConfig(true)} style={{background:"#1e293b",border:"1px solid #334155",color:"#8b5cf6",borderRadius:7,padding:"5px 9px",cursor:"pointer",fontSize:10,fontWeight:600}}>⚙️ Configurar</button>
+                {[["month","📅 Mes"],["stats","📊 Stats"]].map(([k,l])=>(
+                  <button key={k} onClick={()=>setHabitView(k)} style={{padding:"5px 12px",borderRadius:18,border:"1px solid "+(habitView===k?"#22c55e":"#1e293b"),background:habitView===k?"#052e16":"transparent",color:habitView===k?"#22c55e":"#475569",fontSize:11,fontWeight:600,cursor:"pointer"}}>{l}</button>
+                ))}
+              </div>
+              <div style={{display:"flex",gap:12}}>
+                {[{v:overallPct()+"%",l:"Progreso",c:"#8b5cf6"},{v:totChecks(),l:"Checks",c:"#10b981"},{v:perfectDays(),l:"Perfectos",c:"#f97316"}].map((k,i)=>(
+                  <div key={i} style={{textAlign:"center"}}><div style={{fontSize:18,fontWeight:900,color:k.c}}>{k.v}</div><div style={{fontSize:9,color:"#64748b"}}>{k.l}</div></div>
+                ))}
+              </div>
+            </div>
+
+            {habitView==="month"&&(()=>{
+              const days=getDays(habitYear,habitMonth);
+              const todayDay=(today.getFullYear()===habitYear&&today.getMonth()===habitMonth)?today.getDate()-1:-1;
+              const md=getMD();
+              let tableHtml="<thead><tr><th style='padding:0 8px 8px;font-size:10px;color:#475569;font-weight:600;text-align:left;width:200px'>HÁBITO</th>";
+              for(let i=1;i<=days;i++)tableHtml+=`<th style='padding:0 1px 8px;font-size:9px;color:${i-1===todayDay?"#f97316":"#475569"};font-weight:${i-1===todayDay?700:400};text-align:center'>${i}</th>`;
+              tableHtml+="<th style='padding:0 7px 8px;font-size:10px;color:#475569;font-weight:600;width:42px'>%</th><th style='padding:0 4px 8px;font-size:10px;color:#475569;font-weight:600;width:38px'>Pts</th></tr></thead><tbody>";
+              habits.forEach(h=>{
+                const{done,pct:hp}=hStats(h.id);const arr=md[h.id]||Array(31).fill(null);const col=CAT_COLOR[h.category]||"#94a3b8";
+                const pCol=hp>=80?"#10b981":hp>=50?"#f97316":"#ef4444";
+                tableHtml+=`<tr><td style='padding:2px 8px;white-space:nowrap'><div style='display:flex;align-items:center;gap:7px'><span style='font-size:14px'>${h.icon}</span><div><div style='font-size:11px;font-weight:600;color:#cbd5e1'>${h.name}</div><div style='height:2px;border-radius:1px;margin-top:2px;width:${hp}%;background:${col};min-width:2px'></div></div></div></td>`;
+                for(let d=0;d<days;d++){const val=arr[d];const cls=val===1?"done":val===0?"fail":"empty";const tc=d===todayDay?" today-col":"";tableHtml+=`<td style='padding:2px 1px;text-align:center'><button id='hc-${h.id}-${d}' class='cell-btn ${cls}${tc}' onclick='window._th(${h.id},${d})'>${val===1?"✓":val===0?"✗":""}</button></td>`;}
+                tableHtml+=`<td style='padding:2px 7px;text-align:center'><span style='font-size:11px;font-weight:700;color:${pCol}'>${hp}%</span></td><td style='padding:2px 4px;text-align:center'><span style='font-size:11px;font-weight:700;color:#8b5cf6'>${done}</span></td></tr>`;
+              });
+              tableHtml+="<tr style='border-top:1px solid #1e293b'><td style='padding:7px 8px;font-size:10px;color:#64748b;font-weight:600'>Puntos del dia</td>";
+              for(let d=0;d<days;d++){const s=dScore(d);const bg=s===0?"transparent":sColor(s);const tc=s===0?"#334155":"white";const gl=s===habits.length?"box-shadow:0 0 9px rgba(16,185,129,0.5);":"";tableHtml+=`<td style='padding:7px 1px 4px;text-align:center'><div style='width:23px;height:23px;border-radius:5px;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:${bg};color:${tc};${s===0?"border:1px solid #1e293b":""};${gl}'>${s>0?s:""}</div></td>`;}
+              tableHtml+="<td colspan='2'></td></tr></tbody>";
+              return <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+                <table style={{borderCollapse:"collapse",width:"100%",minWidth:800}} dangerouslySetInnerHTML={{__html:tableHtml}}/>
+                <div style={{display:"flex",gap:12,marginTop:10,flexWrap:"wrap",padding:"0 4px"}}>
+                  {[{bg:"linear-gradient(135deg,#10b981,#059669)",l:"Hecho"},{bg:"linear-gradient(135deg,#ef4444,#dc2626)",l:"No hecho"},{bg:"#1e293b",l:"Pendiente",brd:"1px solid #334155"}].map((k,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:5}}><div style={{width:14,height:14,borderRadius:3,background:k.bg,border:k.brd}}/><span style={{fontSize:10,color:"#64748b"}}>{k.l}</span></div>
+                  ))}
+                  <span style={{marginLeft:"auto",fontSize:10,color:"#475569",fontFamily:"monospace"}}>Click: hecho → no hecho → pendiente</span>
+                </div>
+              </div>;
+            })()}
+
+            {habitView==="stats"&&(
+              <div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:14}}>
+                  {[{l:"Progreso total",v:overallPct()+"%",s:"del mes",c:"#8b5cf6",i:"📈"},{l:"Checks totales",v:totChecks(),s:"de "+(habits.length*getDays(habitYear,habitMonth))+" posibles",c:"#10b981",i:"✅"},{l:"Dias perfectos",v:perfectDays(),s:"todos los habitos",c:"#f97316",i:"🔥"},{l:"Habitos activos",v:habits.length,s:"en seguimiento",c:"#06b6d4",i:"🎯"}].map((k,i)=>(
+                    <div key={i} style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:14}}>
+                      <div style={{fontSize:20,marginBottom:5}}>{k.i}</div>
+                      <div style={{fontSize:26,fontWeight:900,color:k.c}}>{k.v}</div>
+                      <div style={{fontSize:11,fontWeight:600,color:"#94a3b8",marginTop:3}}>{k.l}</div>
+                      <div style={{fontSize:10,color:"#64748b"}}>{k.s}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:13,padding:14,marginBottom:12}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginBottom:12,letterSpacing:1,textTransform:"uppercase"}}>Rendimiento por habito</div>
+                  {habits.map(h=>{const{done,tot,pct:hp}=hStats(h.id);const col=CAT_COLOR[h.category]||"#94a3b8";const pCol=hp>=80?"#10b981":hp>=50?"#f97316":"#ef4444";return <div key={h.id} style={{marginBottom:11}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14}}>{h.icon}</span><span style={{fontSize:12,fontWeight:600,color:"#cbd5e1"}}>{h.name}</span><span style={{fontSize:9,padding:"2px 5px",borderRadius:4,fontWeight:600,background:col+"22",color:col}}>{h.category}</span></div>
+                      <div style={{fontSize:12,fontWeight:700,color:pCol}}>{hp}% <span style={{color:"#475569",fontWeight:400,fontSize:10}}>({done}/{tot})</span></div>
+                    </div>
+                    <div style={{background:"#1e293b",borderRadius:4,height:6}}><div style={{width:hp+"%",height:"100%",borderRadius:4,background:"linear-gradient(90deg,"+col+","+col+"aa)",transition:"width 0.5s"}}/></div>
+                  </div>;})}
+                </div>
+                <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:13,padding:14}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginBottom:12,letterSpacing:1,textTransform:"uppercase"}}>Puntuacion diaria</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                    {Array.from({length:getDays(habitYear,habitMonth)},(_,d)=>{
+                      const s=dScore(d);const bg=s===0?"#1e293b":sColor(s);const isT=(today.getFullYear()===habitYear&&today.getMonth()===habitMonth&&d===today.getDate()-1);
+                      return <div key={d} style={{width:38,height:38,borderRadius:7,background:bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",border:isT?"2px solid #f97316":"none",opacity:s===0?0.4:1,boxShadow:s===habits.length?"0 0 12px rgba(16,185,129,0.4)":"none"}}>
+                        <div style={{fontSize:9,fontWeight:600,color:s===0?"#475569":"rgba(255,255,255,0.7)"}}>{d+1}</div>
+                        {s>0&&<div style={{fontSize:12,fontWeight:900,color:"white"}}>{s}</div>}
+                      </div>;
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── COMBATES ── */}
+        {tab==="combates"&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontSize:12,color:"#64748b"}}>{combats.length} combates · {combats.filter(c=>c.result==="victoria").length} victorias · {combats.length?Math.round(combats.filter(c=>c.result==="victoria").length/combats.length*100):0}% tasa</div>
+              <button onClick={()=>setShowCombatForm(true)} style={{background:"linear-gradient(135deg,#f59e0b,#d97706)",border:"none",color:"#fff",borderRadius:8,padding:"6px 13px",cursor:"pointer",fontSize:12,fontWeight:600}}>+ Combate</button>
+            </div>
+            {combats.length>0&&(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8,marginBottom:12}}>
+                {[{l:"Victorias",v:combats.filter(c=>c.result==="victoria").length,c:"#22c55e"},{l:"Derrotas",v:combats.filter(c=>c.result==="derrota").length,c:"#ef4444"},{l:"% Victoria",v:combats.length?Math.round(combats.filter(c=>c.result==="victoria").length/combats.length*100)+"%":"0%",c:"#f59e0b"},{l:"Gi",v:combats.filter(c=>c.category==="gi").length,c:"#3b82f6"},{l:"No-Gi",v:combats.filter(c=>c.category==="nogi").length,c:"#8b5cf6"}].map((k,i)=>(
+                  <div key={i} style={{background:"#0f172a",border:"1px solid "+k.c+"22",borderRadius:10,padding:"10px",textAlign:"center"}}>
+                    <div style={{fontSize:18,fontWeight:900,color:k.c}}>{k.v}</div>
+                    <div style={{fontSize:10,color:"#64748b",marginTop:2}}>{k.l}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {[...combats].reverse().map(c=>{
+              const rCol=c.result==="victoria"?"#22c55e":c.result==="derrota"?"#ef4444":"#94a3b8";
+              return <div key={c.id} style={{background:"#0f172a",border:"1px solid "+rCol+"20",borderRadius:11,padding:13,marginBottom:8}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7,flexWrap:"wrap",gap:7}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:17}}>{c.result==="victoria"?"🏆":c.result==="derrota"?"😤":"🤝"}</span>
+                    <div><div style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>{c.rival||"Sin nombre"}</div><div style={{fontSize:9,color:"#64748b"}}>{c.date} · {c.category}</div></div>
+                  </div>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:20,background:c.result==="victoria"?"#052e16":c.result==="derrota"?"#2d0a0a":"#1e293b",color:rCol}}>{c.result.toUpperCase()}</span>
+                    <button onClick={()=>{if(!confirm("Eliminar?"))return;const nc=combats.filter(x=>x.id!==c.id);setCombats(nc);S(checked,plans,activePlanId,habitsData,habits,energyLog,nc);}} style={{background:"#2d0a0a",border:"none",color:"#f87171",width:24,height:24,borderRadius:5,cursor:"pointer",fontSize:10}}>X</button>
+                  </div>
+                </div>
+                {c.techniques&&<div style={{fontSize:11,color:"#64748b",marginBottom:3}}><span style={{color:"#475569"}}>Tecnicas: </span>{c.techniques}</div>}
+                {c.notes&&<div style={{fontSize:11,color:"#94a3b8",lineHeight:1.5}}>{c.notes}</div>}
+              </div>;
+            })}
+            {combats.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}><div style={{fontSize:30,marginBottom:10}}>🏆</div><div>Sin combates registrados</div></div>}
+          </div>
+        )}
+
+        {/* ── NUTRICION ── */}
+        {tab==="nutri"&&(
+          <div>
+            <div style={{marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:36,height:36,background:"linear-gradient(135deg,#16a34a,#15803d)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🥗</div>
+              <div><div style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>Nutricionista IA Personal</div><div style={{fontSize:11,color:"#64748b"}}>Recomendaciones personalizadas para BJJ</div></div>
+            </div>
+            <ChatPanel msgs={nutriMsgs} input={nutriIn} setInput={setNutriIn} onSend={sendNutri} loading={nutriLoad} endRef={nutriRef}
+              sugs={["¿Que como antes de BJJ?","Receta alta en proteina","¿Como bajo 1kg?","Snacks entre combates","Cena de recuperacion"]}
+              placeholder="Pregunta al nutricionista..." color="#22c55e" label="🥗 NUTRICIONISTA"/>
+          </div>
+        )}
+
+        {/* ── COACH IA ── */}
+        {tab==="coach"&&(
+          <div>
+            <div style={{marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <div style={{width:36,height:36,background:"linear-gradient(135deg,#7c3aed,#4f46e5)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🤖</div>
+              <div><div style={{fontSize:13,fontWeight:700,color:"#f1f5f9"}}>Entrenador IA Personal</div><div style={{fontSize:11,color:"#64748b"}}>BJJ · Habitos · Nutricion · Mental</div></div>
+              <div style={{marginLeft:"auto",background:"#052e16",border:"1px solid #22c55e30",borderRadius:9,padding:"4px 10px",fontSize:11,color:"#22c55e"}}>{totP}% BJJ · {overallPct()}% Habitos</div>
+            </div>
+            <ChatPanel msgs={coachMsgs} input={coachIn} setInput={setCoachIn} onSend={sendCoach} loading={coachLoad} endRef={coachRef}
+              sugs={["¿Como mejoro el cardio?","Analiza mi progreso","Game plan norte-sur","Gestion de nervios","¿Como bajo el peso?"]}
+              placeholder="Pregunta a tu entrenador..." color="#7c3aed" label="🤖 ENTRENADOR"/>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+const root=ReactDOM.createRoot(document.getElementById("root"));
+try{root.render(<App/>);}
+catch(e){
+  document.getElementById("error").style.display="block";
+  document.getElementById("error").textContent="RENDER ERROR: "+e.message+"\n"+e.stack;
+}
+</script>
+</body>
+</html>
